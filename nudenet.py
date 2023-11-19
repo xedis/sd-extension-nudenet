@@ -54,14 +54,30 @@ class NudeResult:
 
 class NudeDetector:
     def __init__(self, providers=None, model=None):
-        global session # pylint: disable=global-statement
-        model = model or os.path.join(os.path.dirname(__file__), 'nudenet.onnx')
-        if session is None:
-            session = onnxruntime.InferenceSession(model, providers=C.get_available_providers() if not providers else providers) # pylint: disable=no-member
-        model_inputs = session.get_inputs()
-        self.input_width = model_inputs[0].shape[2] # 320
-        self.input_height = model_inputs[0].shape[3] # 320
-        self.input_name = model_inputs[0].name
+        self.session = self.initialize_session(providers, model)
+        self.initialize_input_properties()
+
+    def initialize_session(self, providers, model):
+        """ Initialize the ONNX session for model inference """
+        try:
+            model_path = model or os.path.join(os.path.dirname(__file__), 'nudenet.onnx')
+            session = onnxruntime.InferenceSession(model_path, providers=providers)
+            return session
+        except Exception as e:
+            log.error(f"Error initializing ONNX session: {e}")
+            return None
+
+    def initialize_input_properties(self):
+        """ Set input properties from the ONNX session """
+        if self.session:
+            model_inputs = self.session.get_inputs()
+            self.input_width = model_inputs[0].shape[2]  # 320
+            self.input_height = model_inputs[0].shape[3]  # 320
+            self.input_name = model_inputs[0].name
+        else:
+            self.input_width = self.input_height = 320  # Default values or raise an exception
+            self.input_name = None
+
 
 
     def read_image(self, image, target_size=320):
@@ -212,23 +228,49 @@ class NudeDetector:
         return nude
 
 
-def cli():
-    global detector # pylint: disable=global-statement
-    sys.argv.pop(0)
-    if len(sys.argv) == 0:
-        log.error('nudenet: no files specified')
-    for fn in sys.argv:
+def get_image_files_from_directory(directory):
+    supported_extensions = ('.jpg', '.jpeg', '.png', '.bmp', '.gif')
+    image_files = [os.path.join(directory, f) for f in os.listdir(directory)
+                   if os.path.isfile(os.path.join(directory, f)) and f.lower().endswith(supported_extensions)]
+    return image_files
+
+
+def process_directory(directory, censor_list, method='pixelate', min_score=0.2, overlay=None):
+    image_files = self.get_image_files_from_directory(directory)
+    for image_file in image_files:
+        self.process_file(file_path=image_file, censor_list=censor_list, method=method, min_score=min_score, overlay=overlay)
+
+def process_file(detector, file_path, censor_list, method, min_score, overlay=None):
+    try:
         t0 = time.time()
-        pil = Image.open(fn)
-        if detector is None:
-            detector = NudeDetector()
-        nudes = detector.censor(image=pil, censor=['female breast bare', 'female genitalia bare'], min_score=0.2, method='pixelate')
+        pil = Image.open(file_path)
+        nudes = detector.censor(image=pil, censor=censor_list, min_score=min_score, method=method, overlay=overlay)
         t1 = time.time()
         log.info(vars(nudes))
-        f = os.path.splitext(fn)[0] + '_censored.jpg'
-        nudes.output.save(f)
-        log.info(f'nudenet: input={fn} output={f} time={t1-t0:.2f}s')
+        output_file = os.path.splitext(file_path)[0] + '_censored.jpg'
+        nudes.output.save(output_file)
+        log.info(f'nudenet: input={file_path} output={output_file} time={t1-t0:.2f}s')
+    except Exception as e:
+        log.error(f'Error processing file {file_path}: {e}')
 
+def cli():
+    parser = argparse.ArgumentParser(description='NudeNet Image Censorship Tool')
+    parser.add_argument('paths', nargs='+', help='File or directory paths')
+    parser.add_argument('--method', default='pixelate', choices=['pixelate', 'blur', 'gaussian blur', 'median blur', 'block', 'image'], help='Censorship method')
+    parser.add_argument('--score', default=0.2, type=float, help='Minimum detection score')
+    parser.add_argument('--censor', nargs='+', default=[], help='List of labels to censor')
+    parser.add_argument('--overlay', default=None, help='Path to the overlay image for censorship')
+    args = parser.parse_args()
+
+    detector = NudeDetector()
+
+    for path in args.paths:
+        if os.path.isdir(path):
+            process_directory(detector, path, args.censor, args.method, args.score, args.overlay)
+        elif os.path.isfile(path):
+            process_file(detector, path, args.censor, args.method, args.score, args.overlay)
+        else:
+            log.error(f'Invalid path: {path}')
 
 if __name__ == "__main__":
     cli()
