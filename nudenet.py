@@ -15,7 +15,7 @@ from onnxruntime.capi import _pybind_state as C
 log = logging.getLogger("sd")
 session = None
 detector = None
-default_overlay = os.path.join(os.path.dirname(__file__), 'censored.png')
+default_overlay = os.path.join(os.path.dirname(__file__), "censored.png")
 labels = [
     "female-private-area",
     "female-face",
@@ -58,9 +58,11 @@ class NudeDetector:
         self.initialize_input_properties()
 
     def initialize_session(self, providers, model):
-        """ Initialize the ONNX session for model inference """
+        """Initialize the ONNX session for model inference"""
         try:
-            model_path = model or os.path.join(os.path.dirname(__file__), 'nudenet.onnx')
+            model_path = model or os.path.join(
+                os.path.dirname(__file__), "nudenet.onnx"
+            )
             session = onnxruntime.InferenceSession(model_path, providers=providers)
             return session
         except Exception as e:
@@ -68,17 +70,17 @@ class NudeDetector:
             return None
 
     def initialize_input_properties(self):
-        """ Set input properties from the ONNX session """
+        """Set input properties from the ONNX session"""
         if self.session:
             model_inputs = self.session.get_inputs()
             self.input_width = model_inputs[0].shape[2]  # 320
             self.input_height = model_inputs[0].shape[3]  # 320
             self.input_name = model_inputs[0].name
         else:
-            self.input_width = self.input_height = 320  # Default values or raise an exception
+            self.input_width = (
+                self.input_height
+            ) = 320  # Default values or raise an exception
             self.input_name = None
-
-
 
     def read_image(self, image, target_size=320):
         if type(image) == str:
@@ -94,13 +96,23 @@ class NudeDetector:
         else:
             new_width = target_size
             new_height = int(round(target_size / aspect))
-        resize_factor = math.sqrt((img_width**2 + img_height**2) / (new_width**2 + new_height**2))
+        resize_factor = math.sqrt(
+            (img_width**2 + img_height**2) / (new_width**2 + new_height**2)
+        )
         img = cv2.resize(img, (new_width, new_height))
         pad_x = target_size - new_width
         pad_y = target_size - new_height
         pad_top, pad_bottom = [int(i) for i in np.floor([pad_y, pad_y]) / 2]
         pad_left, pad_right = [int(i) for i in np.floor([pad_x, pad_x]) / 2]
-        img = cv2.copyMakeBorder(img, pad_top, pad_bottom, pad_left, pad_right, cv2.BORDER_CONSTANT, value=[0, 0, 0])
+        img = cv2.copyMakeBorder(
+            img,
+            pad_top,
+            pad_bottom,
+            pad_left,
+            pad_right,
+            cv2.BORDER_CONSTANT,
+            value=[0, 0, 0],
+        )
         img = cv2.resize(img, (target_size, target_size))
         image_data = img.astype("float32") / 255.0  # normalize
         image_data = np.transpose(image_data, (2, 0, 1))
@@ -128,15 +140,22 @@ class NudeDetector:
                 boxes.append([left, top, width, height])
         indices = cv2.dnn.NMSBoxes(boxes, scores, 0.25, 0.45)
         res = []
-        for i in indices: # pylint: disable=not-an-iterable
+        for i in indices:  # pylint: disable=not-an-iterable
             box = boxes[i]
             score = scores[i]
             class_id = class_ids[i]
-            res.append({"label": labels[class_id], "id": class_id, "score": round(float(score), 2), "box": box})
+            res.append(
+                {
+                    "label": labels[class_id],
+                    "id": class_id,
+                    "score": round(float(score), 2),
+                    "box": box,
+                }
+            )
         return res
 
     def pixelate(self, image, blocks=3):
-        (h, w) = image.shape[:2] # divide the input image into NxN blocks
+        (h, w) = image.shape[:2]  # divide the input image into NxN blocks
         xSteps = np.linspace(0, w, blocks + 1, dtype="int")
         ySteps = np.linspace(0, h, blocks + 1, dtype="int")
         for i in range(1, len(ySteps)):
@@ -154,14 +173,14 @@ class NudeDetector:
         bg_h, bg_w, bg_channels = background.shape
         fg_h, fg_w, fg_channels = foreground.shape
         if bg_channels != 3:
-            log.error(f'NudeNet input image: channels={bg_channels} must be RGB')
+            log.error(f"NudeNet input image: channels={bg_channels} must be RGB")
             return background
-        if fg_channels < 4: # make sure that overlay is rgba
-            log.warning('NudeNet overlay image does not have alpha channel')
+        if fg_channels < 4:  # make sure that overlay is rgba
+            log.warning("NudeNet overlay image does not have alpha channel")
             foreground = cv2.cvtColor(foreground, cv2.COLOR_RGB2RGBA)
             foreground[:, :, 3] = cv2.cvtColor(foreground, cv2.COLOR_BGR2GRAY)
             fg_h, fg_w, fg_channels = foreground.shape
-        if x_offset is None: # center by default
+        if x_offset is None:  # center by default
             x_offset = (bg_w - fg_w) // 2
         if y_offset is None:
             y_offset = (bg_h - fg_h) // 2
@@ -169,30 +188,52 @@ class NudeDetector:
         h = min(fg_h, bg_h, fg_h + y_offset, bg_h - y_offset)
         if w < 1 or h < 1:
             return background
-        bg_x = max(0, x_offset) # clip foreground and background images to the overlapping regions
+        bg_x = max(
+            0, x_offset
+        )  # clip foreground and background images to the overlapping regions
         bg_y = max(0, y_offset)
         fg_x = max(0, x_offset * -1)
         fg_y = max(0, y_offset * -1)
-        foreground = foreground[fg_y:fg_y + h, fg_x:fg_x + w]
-        background_subsection = background[bg_y:bg_y + h, bg_x:bg_x + w]
-        foreground_colors = foreground[:, :, :3] # separate alpha and color channels from the foreground image
+        foreground = foreground[fg_y : fg_y + h, fg_x : fg_x + w]
+        background_subsection = background[bg_y : bg_y + h, bg_x : bg_x + w]
+        foreground_colors = foreground[
+            :, :, :3
+        ]  # separate alpha and color channels from the foreground image
         alpha_channel = foreground[:, :, 3] / 255  # 0-255 => 0.0-1.0
-        alpha_mask = alpha_mask = alpha_channel[:,:,np.newaxis] # construct an alpha_mask that matches the image shape
-        composite = background_subsection * (1 - alpha_mask) + foreground_colors * alpha_mask # combine the background with the overlay image weighted by alpha
-        background[bg_y:bg_y + h, bg_x:bg_x + w] = composite # overwrite the section of the background image that has been updated
+        alpha_mask = alpha_mask = alpha_channel[
+            :, :, np.newaxis
+        ]  # construct an alpha_mask that matches the image shape
+        composite = (
+            background_subsection * (1 - alpha_mask) + foreground_colors * alpha_mask
+        )  # combine the background with the overlay image weighted by alpha
+        background[
+            bg_y : bg_y + h, bg_x : bg_x + w
+        ] = composite  # overwrite the section of the background image that has been updated
         return background
 
     def detect(self, image, min_score):
-        preprocessed_image, resize_factor, pad_left, pad_top = self.read_image(image, self.input_width)
+        preprocessed_image, resize_factor, pad_left, pad_top = self.read_image(
+            image, self.input_width
+        )
         outputs = session.run(None, {self.input_name: preprocessed_image})
         res = self.postprocess(outputs, resize_factor, pad_left, pad_top, min_score)
         return res
 
-    def censor(self, image, min_score=0.2, censor=None, method='pixelate', blocks=3, overlay=None):
+    def censor(
+        self,
+        image,
+        min_score=0.2,
+        censor=None,
+        method="pixelate",
+        blocks=3,
+        overlay=None,
+    ):
         if type(image) == str:
-            image = cv2.imread(image) # input is image path
+            image = cv2.imread(image)  # input is image path
         else:
-            image = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR) # input is pil image
+            image = cv2.cvtColor(
+                np.array(image), cv2.COLOR_RGB2BGR
+            )  # input is pil image
         nude = NudeResult()
         nude.censor = censor or []
         nude.detections = self.detect(image, min_score)
@@ -201,22 +242,24 @@ class NudeDetector:
             # try:
             box = d["box"]
             x, y, w, h = box[0], box[1], box[2], box[3]
-            area = image[y: y+h, x: x+w]
-            if method == 'pixelate':
-                image[y: y+h, x: x+w] = self.pixelate(area, blocks=blocks)
-            elif method == 'blur':
-                image[y: y+h, x: x+w] = cv2.blur(area, (blocks, blocks))
-            elif method == 'gaussian blur':
-                image[y: y+h, x: x+w] = cv2.GaussianBlur(area, (blocks, blocks), 0)
-            elif method == 'median blur':
-                image[y: y+h, x: x+w] = cv2.medianBlur(area, blocks)
-            elif method == 'block':
-                image[y: y+h, x: x+w] = (0, 0, 0)
-            elif method == 'image':
-                if overlay is None or overlay == '':
+            area = image[y : y + h, x : x + w]
+            if method == "pixelate":
+                image[y : y + h, x : x + w] = self.pixelate(area, blocks=blocks)
+            elif method == "blur":
+                image[y : y + h, x : x + w] = cv2.blur(area, (blocks, blocks))
+            elif method == "gaussian blur":
+                image[y : y + h, x : x + w] = cv2.GaussianBlur(
+                    area, (blocks, blocks), 0
+                )
+            elif method == "median blur":
+                image[y : y + h, x : x + w] = cv2.medianBlur(area, blocks)
+            elif method == "block":
+                image[y : y + h, x : x + w] = (0, 0, 0)
+            elif method == "image":
+                if overlay is None or overlay == "":
                     overlay = default_overlay
                 if not os.path.exists(overlay):
-                    log.error(f'NudeNet overlay image not found: file={overlay}')
+                    log.error(f"NudeNet overlay image not found: file={overlay}")
                     overlay = default_overlay
                 pasty = cv2.imread(overlay, cv2.IMREAD_UNCHANGED)
                 pasty = cv2.resize(pasty, (w, h))
@@ -229,48 +272,84 @@ class NudeDetector:
 
 
 def get_image_files_from_directory(directory):
-    supported_extensions = ('.jpg', '.jpeg', '.png', '.bmp', '.gif')
-    image_files = [os.path.join(directory, f) for f in os.listdir(directory)
-                   if os.path.isfile(os.path.join(directory, f)) and f.lower().endswith(supported_extensions)]
+    supported_extensions = (".jpg", ".jpeg", ".png", ".bmp", ".gif")
+    image_files = [
+        os.path.join(directory, f)
+        for f in os.listdir(directory)
+        if os.path.isfile(os.path.join(directory, f))
+        and f.lower().endswith(supported_extensions)
+    ]
     return image_files
 
 
-def process_directory(directory, censor_list, method='pixelate', min_score=0.2, overlay=None):
+def process_directory(
+    directory, censor_list, method="pixelate", min_score=0.2, overlay=None
+):
     image_files = self.get_image_files_from_directory(directory)
     for image_file in image_files:
-        self.process_file(file_path=image_file, censor_list=censor_list, method=method, min_score=min_score, overlay=overlay)
+        self.process_file(
+            file_path=image_file,
+            censor_list=censor_list,
+            method=method,
+            min_score=min_score,
+            overlay=overlay,
+        )
+
 
 def process_file(detector, file_path, censor_list, method, min_score, overlay=None):
     try:
         t0 = time.time()
         pil = Image.open(file_path)
-        nudes = detector.censor(image=pil, censor=censor_list, min_score=min_score, method=method, overlay=overlay)
+        nudes = detector.censor(
+            image=pil,
+            censor=censor_list,
+            min_score=min_score,
+            method=method,
+            overlay=overlay,
+        )
         t1 = time.time()
         log.info(vars(nudes))
-        output_file = os.path.splitext(file_path)[0] + '_censored.jpg'
+        output_file = os.path.splitext(file_path)[0] + "_censored.jpg"
         nudes.output.save(output_file)
-        log.info(f'nudenet: input={file_path} output={output_file} time={t1-t0:.2f}s')
+        log.info(f"nudenet: input={file_path} output={output_file} time={t1-t0:.2f}s")
     except Exception as e:
-        log.error(f'Error processing file {file_path}: {e}')
+        log.error(f"Error processing file {file_path}: {e}")
+
 
 def cli():
-    parser = argparse.ArgumentParser(description='NudeNet Image Censorship Tool')
-    parser.add_argument('paths', nargs='+', help='File or directory paths')
-    parser.add_argument('--method', default='pixelate', choices=['pixelate', 'blur', 'gaussian blur', 'median blur', 'block', 'image'], help='Censorship method')
-    parser.add_argument('--score', default=0.2, type=float, help='Minimum detection score')
-    parser.add_argument('--censor', nargs='+', default=[], help='List of labels to censor')
-    parser.add_argument('--overlay', default=None, help='Path to the overlay image for censorship')
+    parser = argparse.ArgumentParser(description="NudeNet Image Censorship Tool")
+    parser.add_argument("paths", nargs="+", help="File or directory paths")
+    parser.add_argument(
+        "--method",
+        default="pixelate",
+        choices=["pixelate", "blur", "gaussian blur", "median blur", "block", "image"],
+        help="Censorship method",
+    )
+    parser.add_argument(
+        "--score", default=0.2, type=float, help="Minimum detection score"
+    )
+    parser.add_argument(
+        "--censor", nargs="+", default=[], help="List of labels to censor"
+    )
+    parser.add_argument(
+        "--overlay", default=None, help="Path to the overlay image for censorship"
+    )
     args = parser.parse_args()
 
     detector = NudeDetector()
 
     for path in args.paths:
         if os.path.isdir(path):
-            process_directory(detector, path, args.censor, args.method, args.score, args.overlay)
+            process_directory(
+                detector, path, args.censor, args.method, args.score, args.overlay
+            )
         elif os.path.isfile(path):
-            process_file(detector, path, args.censor, args.method, args.score, args.overlay)
+            process_file(
+                detector, path, args.censor, args.method, args.score, args.overlay
+            )
         else:
-            log.error(f'Invalid path: {path}')
+            log.error(f"Invalid path: {path}")
+
 
 if __name__ == "__main__":
     cli()
